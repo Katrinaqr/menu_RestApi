@@ -4,7 +4,6 @@ from sqlalchemy.orm import sessionmaker, relationship, validates
 from sqlalchemy import create_engine
 import requests
 
-
 CATEGORIES_MENU = ["pizza", "snack", "dessert", "drink", "sauce"]
 WEIGHT_ITEMS = ["big", "medium", "thin", "standard"]
 # HEADERS is used in the response of the function (parse_csr), each will have its own.
@@ -20,9 +19,10 @@ OTHER_MENU = [{"url": DESSERTS_URL, "category": "dessert"},
               {"url": DRINKS_URL, "category": "drink"},
               {"url": SAUCES_URL, "category": "sauce"}]
 
-
 Base = declarative_base()
 engine = create_engine("sqlite:///menu.db", connect_args={"check_same_thread": False})
+session = sessionmaker(bind=engine)
+sess = session()
 
 
 class NotUnique(Exception):
@@ -36,28 +36,45 @@ class NotFoundError(Exception):
 class Category(Base):
     __tablename__ = "categories"
     id_category = Column(Integer, primary_key=True)
-    name = Column(String(250), nullable=False)
+    name = Column(String(250), unique=True, nullable=False)
+    menu_item = relationship("Menu", back_populates="category")
+
+    @validates("name")
+    def validate_category(self, key, name):
+        if not name:
+            raise ValueError("Category must be a non-empty string.")
+        return name
 
 
 class Weight(Base):
     __tablename__ = "weight_items"
     id_weight = Column(Integer, primary_key=True)
-    weight = Column(String(250), nullable=False)
+    weight = Column(String(250), unique=True, nullable=False)
+    menu_item = relationship("Menu", back_populates="weight")
+
+    @validates("weight")
+    def validate_category(self, key, weight):
+        if not weight:
+            raise ValueError("Weight must be a non-empty string.")
+        return weight
 
 
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id_item = Column(Integer, primary_key=True)
     title = Column(String(250), unique=True, nullable=False)
+    menu_item = relationship("Menu", back_populates="title")
     anonce = Column(String(250))
     photo_small = Column(String(250))
     photo_first = Column(String(250))
     photo_second = Column(String(250))
 
     @validates("title")
-    def validate_price(self, key, title):
-        if not isinstance(title, str) or title == "":
+    def validate_title(self, key, title):
+        if not title:
             raise ValueError("Title must be a non-empty string.")
+        if sess.query(MenuItem).filter(MenuItem.title == title).first():
+            raise NotUnique(f"{title} already exits. Title must be unique.")
         return title
 
 
@@ -65,10 +82,13 @@ class Menu(Base):
     __tablename__ = "menu"
     id_menu_item = Column(Integer, primary_key=True)
     title_id = Column(Integer, ForeignKey("menu_items.id_item"))
+    title = relationship("MenuItem", back_populates="menu_item")
     category_id = Column(Integer, ForeignKey("categories.id_category"))
+    category = relationship("Category", back_populates="menu_item")
     weight_id = Column(Integer, ForeignKey("weight_items.id_weight"))
+    weight = relationship("Weight", back_populates="menu_item")
     weight_desc = Column(String(250))
-    price = Column(Integer)
+    price = Column(Integer, nullable=False)
     calories = Column(Integer)
     carbohydrates = Column(Integer)
     fats = Column(Integer)
@@ -76,6 +96,8 @@ class Menu(Base):
 
     @validates("price")
     def validate_price(self, key, price):
+        if not price:
+            raise ValueError("Price must be a non-empty string.")
         try:
             float(price)
         except ValueError:
@@ -84,8 +106,6 @@ class Menu(Base):
 
 
 Base.metadata.create_all(engine)
-session = sessionmaker(bind=engine)
-sess = session()
 
 
 def parse_csr(url):
@@ -220,4 +240,3 @@ if not sess.query(Menu).first():
                           fats=fats,
                           proteins=proteins))
             sess.commit()
-

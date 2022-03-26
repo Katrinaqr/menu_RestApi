@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, render_template, request
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, exc
-from main import Base, Category, Weight, MenuItem, Menu, NotUnique, NotFoundError
+from main import Base, Category, Weight, MenuItem, Menu, NotFoundError
 
 
 engine = create_engine("sqlite:///menu.db", connect_args={"check_same_thread": False})
@@ -101,12 +101,13 @@ def add_new_item():
         sess.commit()
         new_item = sess.query(Menu, MenuItem).filter(MenuItem.title == title).filter(Menu.title_id == MenuItem.id_item)
         return jsonify(menu={"Successfully added the new item in Menu:": get_menu_items(new_item)})
-
-    except exc.IntegrityError:
-        sess.rollback()
-        raise NotUnique("Title must be unique.")
-    except AttributeError:
-        raise NameError(f"Invalid category names: {category} or {weight}")
+    except AttributeError as er:
+        if "id_category" in er.args[0]:
+            raise NameError(f"Invalid name: {category}")
+        else:
+            raise NameError(f"Invalid name: {weight}")
+    finally:
+        sess.close()
 
 
 @app.route("/menu/update/<item_id>", methods=["PUT"])
@@ -114,6 +115,7 @@ def update_menu_item(item_id):
     try:
         update_item = sess.query(Menu, MenuItem).filter(Menu.id_menu_item == item_id).filter(
             MenuItem.id_item == Menu.title_id).one()
+
         if update_item:
             title = request.form.get("title")
             category = request.form.get("category")
@@ -130,18 +132,18 @@ def update_menu_item(item_id):
                 update_item.Menu.fats = request.form.get("fats")
                 update_item.Menu.proteins = request.form.get("proteins")
                 sess.commit()
-
                 update_item = sess.query(Menu, MenuItem).filter(Menu.id_menu_item == item_id).filter(
                     MenuItem.id_item == Menu.title_id)
                 return jsonify(menu={"Successfully updated the item in Menu:": get_menu_items(update_item)})
-
-            except exc.IntegrityError:
-                sess.rollback()
-                raise NotUnique("Title must be unique.")
-            except AttributeError:
-                raise NameError(f"Invalid category names: {category} or {weight}")
+            except AttributeError as er:
+                if "id_category" in er.args[0]:
+                    raise NameError(f"Invalid name: {category}")
+                else:
+                    raise NameError(f"Invalid name: {weight}")
     except exc.NoResultFound:
         raise NotFoundError(f"Unable to find item with id: {item_id}")
+    finally:
+        sess.close()
 
 
 @app.route("/menu/delete/<item_id>", methods=["DELETE"])
