@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Adds/updates the menu item.</title>
+</head>
+<body>
+
+    <form action="" method="post">
+		{{ form.csrf_token }}
+	<p>
+	    {{ form.title.label() }}
+	    {{ form.title(size=50) }}
+	</p>
+	<p>
+	    {{ form.category.label() }}
+	    {{ form.category() }}
+	</p>
+	<p>
+	    {{ form.weight.label() }}
+	    {{ form.weight() }}
+	</p>
+	<p>
+	    {{ form.weight_desc.label() }}
+	    {{ form.weight_desc() }}
+	</p>
+	<p>
+	    {{ form.price.label() }}
+	    {{ form.price() }}
+	</p>
+	<p>
+	    {{ form.anonce.label() }}
+	    {{ form.anonce(size=50) }}
+	</p>
+	<p>
+	    {{ form.calories.label() }}
+	    {{ form.calories() }}
+	</p>
+	<p>
+	    {{ form.carbohydrates.label() }}
+	    {{ form.carbohydrates() }}
+	</p>
+	<p>
+	    {{ form.fats.label() }}
+	    {{ form.fats() }}
+	</p>
+	<p>
+	    {{ form.proteins.label() }}
+	    {{ form.proteins() }}
+	</p>
+	<p>
+	    {{ form.photo_small.label() }}
+	    {{ form.photo_small(size=50) }}
+	</p>
+	<p>
+	    {{ form.photo_first.label() }}
+	    {{ form.photo_first(size=50) }}
+	</p>
+	<p>
+	    {{ form.photo_second.label() }}
+	    {{ form.photo_second(size=50) }}
+	</p>
+	<p>
+	    {{ form.submit() }}
+	</p>
+    </form>
+
+</body>
+</html>
