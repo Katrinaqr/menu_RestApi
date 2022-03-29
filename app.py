@@ -33,6 +33,13 @@ def admin_only(f):
     return decorated_function
 
 
+def rights_check(user_id):
+    if current_user.id == 1 or user_id == current_user.id:
+        return True
+    else:
+        return abort(403)
+
+
 def get_menu_items(menu_items=None, category=None):
     """Returns the list of items in the menu.
         It takes table elements as a parameter."""
@@ -176,7 +183,7 @@ def update_menu_item(item_id):
                                   photo_small=update_item.MenuItem.photo_small,
                                   photo_first=update_item.MenuItem.photo_first,
                                   photo_second=update_item.MenuItem.photo_second)
-        if current_user.id == 1 or update_item.Menu.user_create == current_user.id:
+        if rights_check(update_item.Menu.user_create):
             if form.validate_on_submit():
                 title = form.title.data
                 category = form.category.data
@@ -204,8 +211,6 @@ def update_menu_item(item_id):
                         raise NameError(f"Invalid name: {category}")
                     else:
                         raise NameError(f"Invalid name: {weight}")
-        else:
-            return abort(403)
     except exc.NoResultFound:
         raise NotFoundError(f"Unable to find item with id: {item_id}")
     finally:
@@ -217,16 +222,15 @@ def update_menu_item(item_id):
 @admin_only
 def delete_menu_item(item_id):
     try:
-        delete_item = sess.query(Menu).filter(Menu.id_menu_item == item_id).first()
-        if current_user.id == 1 or delete_item.user_create == current_user.id:
-            sess.query(Menu).filter(Menu.id_menu_item == item_id).delete()
+        delete_item = sess.query(Menu).filter(Menu.id_menu_item == item_id)
+        title_id = delete_item.first().title_id
+        if rights_check(delete_item.first().user_create):
+            delete_item.delete()
             # If it was the only product in the Menu table, it can also be removed from the table MenuItem
-            if not sess.query(Menu).filter(Menu.title_id == delete_item.title_id).first():
-                sess.query(MenuItem).filter(MenuItem.id_item == delete_item.title_id).delete()
+            if not sess.query(Menu).filter(Menu.title_id == title_id).first():
+                sess.query(MenuItem).filter(MenuItem.id_item == title_id).delete()
             sess.commit()
             return jsonify(menu={"Successfully delete the item with id:": item_id})
-        else:
-            return abort(403)
     except (exc.NoResultFound, AttributeError):
         raise NotFoundError(f"Unable to find item with id: {item_id}")
 
