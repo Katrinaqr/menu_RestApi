@@ -1,52 +1,46 @@
-from flask import Flask, jsonify, render_template, redirect, url_for, flash, abort
-from flask_login import LoginManager, current_user, login_required, login_user, logout_user
+from flask import Flask, request, jsonify, render_template, make_response
+from main import Category, Weight, MenuItem, Menu, User
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, exc
 from functools import wraps
-from main import Category, Weight, MenuItem, Menu, User, LoginForm, CreateMenuItemForm, NotFoundError, NotUnique
+import datetime
+import jwt
 
 
-engine = create_engine("sqlite:///menu.db", connect_args={"check_same_thread": False})
+engine = create_engine("sqlite:///menu.db")
 session = sessionmaker(bind=engine)
 sess = session()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = "8BYkEfBA6O6donzWlSihBXox7C0sKR6b"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JSON_SORT_KEYS'] = False
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "login"
+app.config["SECRET_KEY"] = "8BYkEfBA6O6donzWlSihBXox7C0sKR6b"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["JSON_SORT_KEYS"] = False
 
 
-@login_manager.user_loader
-def load_user(user_id):
-    return sess.query(User).get(user_id)
-
-
-def admin_only(f):
+def token_required(f):
     @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or current_user.id != 1 and current_user.id != 2:
-            return abort(403)
-        return f(*args, **kwargs)
-    return decorated_function
+    def decorated(*args, **kwargs):
+        token = None
+        if "x-access-token" in request.headers:
+            token = request.headers["x-access-token"]
+        if not token:
+            return jsonify({"message": "Token is missing!"}), 401
+
+        try:
+            data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            curr_user = sess.query(User).filter(User.email == data["email"]).first()
+        except:
+            return jsonify({"message": "Token is invalid!"}), 401
+
+        return f(curr_user, *args, **kwargs)
+
+    return decorated
 
 
-def rights_check(user_id):
-    if current_user.id == 1 or user_id == current_user.id:
-        return True
-    else:
-        return abort(403)
-
-
-def get_menu_items(menu_items=None, category=None):
+def get_menu_items(menu_items):
     """Returns the list of items in the menu.
         It takes table elements as a parameter."""
     menu = []
-    if category:
-        menu_items = sess.query(Menu, MenuItem).filter(Menu.category_id == category).filter(
-            Menu.title_id == MenuItem.id_item)
     try:
         for row in menu_items:
             menu_item = {}
@@ -68,12 +62,15 @@ def get_menu_items(menu_items=None, category=None):
     return menu
 
 
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({"message": "Resource Not Found."}), 404
+    # return render_template("404.html"), 404
+
+
 @app.route("/")
 def home():
-    user = "anonymous"
-    if current_user.is_authenticated:
-        user = current_user.name
-    return render_template("index.html", user=user)
+    return render_template("index.html")
 
 
 @app.route("/menu")
@@ -82,182 +79,174 @@ def get_all_menu():
     return jsonify(menu=sorted(get_menu_items(menu_items), key=lambda i: i["category"]))
 
 
-@app.route("/menu/pizzas")
-def get_all_pizzas():
-    return jsonify(menu=get_menu_items(category=1))
+@app.route("/menu/<category>", methods=["GET"])
+def get_items_category(category):
+    try:
+        category_id = sess.query(Category).filter(Category.name == category).first().id_category
+    except AttributeError:
+        return jsonify({"message": f"Invalid category name: {category}."}), 400
+    menu_items = sess.query(Menu, MenuItem).filter(Menu.category_id == category_id).filter(
+        Menu.title_id == MenuItem.id_item)
+    return jsonify(menu=get_menu_items(menu_items))
 
 
-@app.route("/menu/snacks")
-def get_all_snacks():
-    return jsonify(menu=get_menu_items(category=2))
-
-
-@app.route("/menu/desserts")
-def get_all_desserts():
-    return jsonify(menu=get_menu_items(category=3))
-
-
-@app.route("/menu/drinks")
-def get_all_drinks():
-    return jsonify(menu=get_menu_items(category=4))
-
-
-@app.route("/menu/sauces")
-def get_all_sauces():
-    return jsonify(menu=get_menu_items(category=5))
-
-
-@app.route("/menu/pizzas/expensive")
+@app.route("/menu/pizza/expensive")
 def get_expensive_pizza():
-    max_price = sorted(get_menu_items(category=1), key=lambda i: i["price"])[-1]["price"]
+    price = sess.query(Menu.price).filter(Menu.category_id == 1).all()
     menu_items = sess.query(Menu, MenuItem).filter(Menu.category_id == 1).filter(
-            Menu.title_id == MenuItem.id_item).filter(Menu.price == max_price)
+        Menu.title_id == MenuItem.id_item).filter(Menu.price == max(price)[0])
     return jsonify(menu=get_menu_items(menu_items))
 
 
-@app.route("/menu/pizzas/cheap")
+@app.route("/menu/pizza/cheap")
 def get_cheap_pizza():
-    min_price = sorted(get_menu_items(category=1), key=lambda i: i["price"])[0]["price"]
+    price = sess.query(Menu.price).filter(Menu.category_id == 1).all()
     menu_items = sess.query(Menu, MenuItem).filter(Menu.category_id == 1).filter(
-        Menu.title_id == MenuItem.id_item).filter(Menu.price == min_price)
+        Menu.title_id == MenuItem.id_item).filter(Menu.price == min(price)[0])
     return jsonify(menu=get_menu_items(menu_items))
 
 
-@app.route("/menu/add", methods=["GET", "POST"])
-@admin_only
-def add_new_item():
-    form = CreateMenuItemForm()
-    if form.validate_on_submit():
-        title = form.title.data
-        category = form.category.data
-        weight = form.weight.data
-        try:
-            sess.add(MenuItem(title=title,
-                              anonce=form.anonce.data,
-                              photo_small=form.photo_small.data,
-                              photo_first=form.photo_first.data,
-                              photo_second=form.photo_second.data))
+@app.route("/menu", methods=["POST"])
+@token_required
+def add_new_item(curr_user):
+    if curr_user.name != "super" and curr_user.name != "admin":
+        return jsonify({"message": "No access to this function."}), 403
 
-            sess.add(Menu(title_id=sess.query(MenuItem).filter_by(title=title).first().id_item,
-                          category_id=sess.query(Category).filter_by(name=category).first().id_category,
-                          weight_id=sess.query(Weight).filter_by(weight=weight).first().id_weight,
-                          weight_desc=form.weight_desc.data,
-                          price=form.price.data,
-                          calories=form.calories.data,
-                          carbohydrates=form.carbohydrates.data,
-                          fats=form.fats.data,
-                          proteins=form.proteins.data,
-                          user_create=current_user.id))
-            sess.commit()
-            new_item = sess.query(Menu, MenuItem).filter(MenuItem.title == title).filter(Menu.title_id == MenuItem.id_item)
-            return jsonify(menu={"Successfully added the new item in Menu:": get_menu_items(new_item)})
-        except exc.IntegrityError:
-            raise NotUnique(f"{title} already exits. Title must be unique.")
-        except AttributeError as er:
-            if "id_category" in er.args[0]:
-                raise NameError(f"Invalid name: {category}")
-            else:
-                raise NameError(f"Invalid name: {weight}")
-        finally:
-            sess.close()
+    title = request.form.get("title")
+    category = request.form.get("category")
+    weight = request.form.get("weight")
+    price = request.form.get("price")
+    if isinstance(Menu.validate_price(price), dict):
+        return jsonify(Menu.validate_price(price)), 400
+    if not title or not category or not weight:
+        return jsonify({"message": "Title, category, weight must be a non-empty."}), 400
 
-    return render_template("add.html", form=form)
+    try:
+        sess.add(MenuItem(title=title,
+                          anonce=request.form.get("anonce"),
+                          photo_small=request.form.get("photo_small"),
+                          photo_first=request.form.get("photo_first"),
+                          photo_second=request.form.get("photo_second")))
+
+        sess.add(Menu(title_id=sess.query(MenuItem).filter_by(title=title).first().id_item,
+                      category_id=sess.query(Category).filter_by(name=category).first().id_category,
+                      weight_id=sess.query(Weight).filter_by(weight=weight).first().id_weight,
+                      weight_desc=request.form.get("weight_desc"),
+                      price=price,
+                      calories=request.form.get("calories"),
+                      carbohydrates=request.form.get("carbohydrates"),
+                      fats=request.form.get("fats"),
+                      proteins=request.form.get("proteins"),
+                      user_create=curr_user.id))
+        sess.commit()
+        new_item = sess.query(Menu, MenuItem).filter(MenuItem.title == title).filter(Menu.title_id == MenuItem.id_item)
+        return jsonify(menu={"Successfully added the new item in Menu:": get_menu_items(new_item)}), 201
+    except exc.IntegrityError:
+        return jsonify({"message": f"{title} already exits. Title must be unique."}), 400
+    except AttributeError as er:
+        if "id_category" in er.args[0]:
+            return jsonify({"message": f"Invalid category name: {category}."}), 400
+        else:
+            return jsonify({"message": f"Invalid weight name: {weight}."}), 400
+    finally:
+        sess.close()
 
 
-@app.route("/menu/update/<item_id>", methods=["GET", "POST"])
-@admin_only
-def update_menu_item(item_id):
+@app.route("/menu/<item_id>", methods=["PUT"])
+@token_required
+def update_menu_item(curr_user, item_id):
     try:
         update_item = sess.query(Menu, MenuItem).filter(Menu.id_menu_item == item_id).filter(
             MenuItem.id_item == Menu.title_id).one()
-        form = CreateMenuItemForm(title=update_item.MenuItem.title,
-                                  category=update_item.Menu.category.name,
-                                  weight=update_item.Menu.weight.weight,
-                                  weight_desc=update_item.Menu.weight_desc,
-                                  price=update_item.Menu.price,
-                                  anonce=update_item.MenuItem.anonce,
-                                  calories=update_item.Menu.calories,
-                                  carbohydrates=update_item.Menu.carbohydrates,
-                                  fats=update_item.Menu.fats,
-                                  proteins=update_item.Menu.proteins,
-                                  photo_small=update_item.MenuItem.photo_small,
-                                  photo_first=update_item.MenuItem.photo_first,
-                                  photo_second=update_item.MenuItem.photo_second)
-        if rights_check(update_item.Menu.user_create):
-            if form.validate_on_submit():
-                title = form.title.data
-                category = form.category.data
-                weight = form.weight.data
-                try:
-                    update_item.MenuItem.title = title
-                    update_item.Menu.category_id = sess.query(Category).filter_by(name=category).first().id_category
-                    update_item.Menu.weight_id = sess.query(Weight).filter_by(weight=weight).first().id_weight
-                    update_item.Menu.weight_desc = form.weight_desc.data
-                    update_item.Menu.price = form.price.data
-                    update_item.MenuItem.anonce = form.anonce.data
-                    update_item.Menu.calories = form.calories.data
-                    update_item.Menu.carbohydrates = form.carbohydrates.data
-                    update_item.Menu.fats = form.fats.data
-                    update_item.Menu.proteins = form.proteins.data
-                    update_item.MenuItem.photo_small = form.photo_small.data
-                    update_item.MenuItem.photo_first = form.photo_first.data
-                    update_item.MenuItem.photo_second = form.photo_second.data
-                    sess.commit()
-                    update_item = sess.query(Menu, MenuItem).filter(Menu.id_menu_item == item_id).filter(
-                        MenuItem.id_item == Menu.title_id)
-                    return jsonify(menu={"Successfully updated the item in Menu:": get_menu_items(update_item)})
-                except AttributeError as er:
-                    if "id_category" in er.args[0]:
-                        raise NameError(f"Invalid name: {category}")
-                    else:
-                        raise NameError(f"Invalid name: {weight}")
+        if curr_user.name != "super" and curr_user.name != "admin" or \
+                curr_user.name == "admin" and curr_user.id != update_item.Menu.user_create:
+            return jsonify({"message": "No access to this function."}), 403
+
+        title = request.form.get("title")
+        category = request.form.get("category")
+        weight = request.form.get("weight")
+        price = request.form.get("price")
+        if isinstance(Menu.validate_price(price), dict):
+            return jsonify(Menu.validate_price(price)), 400
+        if not title or not category or not weight:
+            return jsonify({"message": "Title, category, weight must be a non-empty."}), 400
+
+        try:
+            update_item.MenuItem.title = title
+            update_item.Menu.category_id = sess.query(Category).filter_by(name=category).first().id_category
+            update_item.Menu.weight_id = sess.query(Weight).filter_by(weight=weight).first().id_weight
+            update_item.Menu.weight_desc = request.form.get("weight_desc")
+            update_item.Menu.price = price
+            update_item.MenuItem.anonce = request.form.get("anonce")
+            update_item.Menu.calories = request.form.get("calories")
+            update_item.Menu.carbohydrates = request.form.get("carbohydrates")
+            update_item.Menu.fats = request.form.get("fats")
+            update_item.Menu.proteins = request.form.get("proteins")
+            update_item.MenuItem.photo_small = request.form.get("photo_small")
+            update_item.MenuItem.photo_first = request.form.get("photo_first")
+            update_item.MenuItem.photo_second = request.form.get("photo_second")
+            sess.commit()
+            update_item = sess.query(Menu, MenuItem).filter(Menu.id_menu_item == item_id).filter(
+                            MenuItem.id_item == Menu.title_id)
+            return jsonify(menu={"Successfully updated the item in Menu:": get_menu_items(update_item)}), 201
+        except exc.IntegrityError:
+            return jsonify({"message": f"{title} already exists in the menu. Title must be unique."}), 400
+        except AttributeError as er:
+            if "id_category" in er.args[0]:
+                return jsonify({"message": f"Invalid name: {category}."}), 400
+            else:
+                return jsonify({"message": f"Invalid name: {weight}."}), 400
+        finally:
+            sess.close()
     except exc.NoResultFound:
-        raise NotFoundError(f"Unable to find item with id: {item_id}")
-    finally:
-        sess.close()
-    return render_template("add.html", form=form)
+        return jsonify({"message": f"Unable to find item with id: {item_id}."}), 404
 
 
-@app.route("/menu/delete/<item_id>", methods=["GET", "DELETE"])
-@admin_only
-def delete_menu_item(item_id):
+@app.route("/menu/<item_id>", methods=["DELETE"])
+@token_required
+def delete_menu_item(curr_user, item_id):
     try:
         delete_item = sess.query(Menu).filter(Menu.id_menu_item == item_id)
         title_id = delete_item.first().title_id
-        if rights_check(delete_item.first().user_create):
-            delete_item.delete()
-            # If it was the only product in the Menu table, it can also be removed from the table MenuItem
-            if not sess.query(Menu).filter(Menu.title_id == title_id).first():
-                sess.query(MenuItem).filter(MenuItem.id_item == title_id).delete()
-            sess.commit()
-            return jsonify(menu={"Successfully delete the item with id:": item_id})
+        if curr_user.name != "super" and curr_user.name != "admin" or \
+                curr_user.name == "admin" and curr_user.id != delete_item.first().user_create:
+            return jsonify({"message": "No access to this function."}), 403
+        delete_item.delete()
+        # If it was the only product in the Menu table, it can also be removed from the table MenuItem
+        if not sess.query(Menu).filter(Menu.title_id == title_id).first():
+            sess.query(MenuItem).filter(MenuItem.id_item == title_id).delete()
+        sess.commit()
+        return jsonify(menu={"Successfully delete the item with id:": item_id}), 200
     except (exc.NoResultFound, AttributeError):
-        raise NotFoundError(f"Unable to find item with id: {item_id}")
+        return jsonify({"message": f"Unable to find item with id: {item_id}."}), 404
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/user", methods=["POST"])
+def create_user():
+    data = request.get_json()
+    new_user = User(name=data["name"], email=data["email"])
+    new_user.set_password(data["password"])
+    sess.add(new_user)
+    sess.commit()
+    return jsonify({"message": "New user created!"}), 201
+
+
+@app.route("/login")
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("home"))
-    form = LoginForm()
-    if form.validate_on_submit():
-        email = form.email.data
-        password = form.password.data
-        user = sess.query(User).filter(User.email == email).first()
-        if user and user.check_password(password):
-            login_user(user, remember=form.remember.data)
-            return redirect(url_for("home"))
-        flash("Invalid email or password.", 'error')
-        return redirect(url_for("login"))
-    return render_template("login.html", form=form)
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return make_response("Could not verify: user not found.", 401, {"WWW-Authenticate": "Basic realm='Login required!'"})
+    user = sess.query(User).filter(User.name == auth.username).first()
 
+    if not user:
+        return make_response("Could not verify: invalid name.", 401, {"WWW-Authenticate": "Basic realm='Login required!'"})
 
-@app.route("/logout")
-@login_required
-def logout():
-    logout_user()
-    flash("You have been logged out.")
-    return redirect(url_for("login"))
+    if user.check_password(auth.password):
+        token = jwt.encode({"email": user.email, "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=60)},
+                           app.config['SECRET_KEY'])
+        return jsonify({"token": token})
+
+    return make_response("Could not verify: invalid password.", 401, {"WWW-Authenticate": "Basic realm='Login required!'"})
 
 
 if __name__ == "__main__":

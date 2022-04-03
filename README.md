@@ -5,7 +5,7 @@ The server makes it possible to obtain data from the entire menu, its specific c
 It is possible to log in and log out.
 Each user has certain rights (view, add, edit, delete menu categories).
 
-The documentation is written using the Postman application.
+Requests were checked using the application Postman.
 https://www.postman.com
 
 Used Python 3.9, Flask and SQLite.

@@ -4,9 +4,6 @@ from sqlalchemy.orm import sessionmaker, relationship, validates
 from sqlalchemy import create_engine
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, PasswordField, BooleanField
-from wtforms.validators import DataRequired
 import requests
 
 
@@ -31,49 +28,17 @@ session = sessionmaker(bind=engine)
 sess = session()
 
 
-class NotUnique(Exception):
-    pass
-
-
-class NotFoundError(Exception):
-    pass
-
-
-class LoginForm(FlaskForm):
-    email = StringField("Email", validators=[DataRequired()])
-    password = PasswordField("Password", validators=[DataRequired()])
-    remember = BooleanField("Remember Me")
-    submit = SubmitField()
-
-
-class CreateMenuItemForm(FlaskForm):
-    title = StringField("title", validators=[DataRequired()])
-    category = StringField("category", validators=[DataRequired()])
-    weight = StringField("weight", validators=[DataRequired()])
-    weight_desc = StringField("weight_desc", validators=[DataRequired()])
-    price = StringField("price", validators=[DataRequired()])
-    anonce = StringField("anonce")
-    calories = StringField("calories")
-    carbohydrates = StringField("carbohydrates")
-    fats = StringField("fats")
-    proteins = StringField("proteins")
-    photo_small = StringField("photo_small")
-    photo_first = StringField("photo_first")
-    photo_second = StringField("photo_second")
-    submit = SubmitField()
-
-
 class Category(Base):
     __tablename__ = "categories"
     id_category = Column(Integer, primary_key=True)
     name = Column(String(50), unique=True, nullable=False)
     menu_item = relationship("Menu", back_populates="category")
 
-    @validates("name")
-    def validate_category(self, key, name):
-        if not name:
-            raise ValueError("Category must be a non-empty string.")
-        return name
+    # @validates("name")
+    # def validate_category(self, key, name):
+    #     if not name:
+    #         raise ValueError("Category must be a non-empty string.")
+    #     return name
 
 
 class Weight(Base):
@@ -82,11 +47,11 @@ class Weight(Base):
     weight = Column(String(50), unique=True, nullable=False)
     menu_item = relationship("Menu", back_populates="weight")
 
-    @validates("weight")
-    def validate_category(self, key, weight):
-        if not weight:
-            raise ValueError("Weight must be a non-empty string.")
-        return weight
+    # @validates("weight")
+    # def validate_category(self, key, weight):
+    #     if not weight:
+    #         raise ValueError("Weight must be a non-empty string.")
+    #     return weight
 
 
 class MenuItem(Base):
@@ -99,13 +64,13 @@ class MenuItem(Base):
     photo_first = Column(String(250))
     photo_second = Column(String(250))
 
-    @validates("title")
-    def validate_title(self, key, title):
-        if not title:
-            raise ValueError("Title must be a non-empty string.")
-        # if sess.query(MenuItem).filter(MenuItem.title == title).first():
-        #     raise NotUnique(f"{title} already exits. Title must be unique.")
-        return title
+    # @validates("title")
+    # def validate_title(self, key, title):
+    #     if not title:
+    #         raise ValueError("Title must be a non-empty string.")
+    #     if sess.query(MenuItem).filter(MenuItem.title == title).first():
+    #         raise NotUnique(f"{title} already exits. Title must be unique.")
+    #     return title
 
 
 class Menu(Base):
@@ -126,15 +91,15 @@ class Menu(Base):
     user_create = Column(Integer, ForeignKey("users.id"), default=1)
     user = relationship("User", back_populates="menu_item")
 
-    @validates("price")
-    def validate_price(self, key, price):
-        if not price:
-            raise ValueError("Price must be a non-empty string.")
+    @staticmethod
+    def validate_price(value):
+        if not value:
+            return {"message": "Price must be a non-empty."}
         try:
-            float(price)
+            float(value)
         except ValueError:
-            raise ValueError("Price must be integer.")
-        return price
+            return {"message": "Price must be integer."}
+        return value
 
 
 class User(UserMixin, Base):
@@ -153,20 +118,6 @@ class User(UserMixin, Base):
 
 
 Base.metadata.create_all(engine)
-
-
-if not sess.query(User).first():
-    u1 = User(name="super", email="super@example.com")
-    u1.set_password("super123")
-
-    u2 = User(name="admin", email="admin@example.com")
-    u2.set_password("admin123")
-
-    u3 = User(name="user", email="user@example.com")
-    u3.set_password("user123")
-
-    sess.add_all([u1, u2, u3])
-    sess.commit()
 
 
 def parse_csr(url):
