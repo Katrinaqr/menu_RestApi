@@ -34,11 +34,13 @@ class Category(Base):
     name = Column(String(50), unique=True, nullable=False)
     menu_item = relationship("Menu", back_populates="category")
 
-    # @validates("name")
-    # def validate_category(self, key, name):
-    #     if not name:
-    #         raise ValueError("Category must be a non-empty string.")
-    #     return name
+    @staticmethod
+    def validate_category(name):
+        if not name:
+            return {"message": "Category must be a non-empty."}
+        if not sess.query(Category).filter(Category.name == name).first():
+            return {"message": f"Invalid category name: {name}."}
+        return name
 
 
 class Weight(Base):
@@ -47,11 +49,13 @@ class Weight(Base):
     weight = Column(String(50), unique=True, nullable=False)
     menu_item = relationship("Menu", back_populates="weight")
 
-    # @validates("weight")
-    # def validate_category(self, key, weight):
-    #     if not weight:
-    #         raise ValueError("Weight must be a non-empty string.")
-    #     return weight
+    @staticmethod
+    def validate_weight(weight):
+        if not weight:
+            return {"message": "Weight must be a non-empty."}
+        if not sess.query(Weight).filter(Weight.weight == weight).first():
+            return {"message": f"Invalid weight name: {weight}."}
+        return weight
 
 
 class MenuItem(Base):
@@ -64,13 +68,13 @@ class MenuItem(Base):
     photo_first = Column(String(250))
     photo_second = Column(String(250))
 
-    # @validates("title")
-    # def validate_title(self, key, title):
-    #     if not title:
-    #         raise ValueError("Title must be a non-empty string.")
-    #     if sess.query(MenuItem).filter(MenuItem.title == title).first():
-    #         raise NotUnique(f"{title} already exits. Title must be unique.")
-    #     return title
+    @staticmethod
+    def validate_title(title):
+        if not title:
+            return {"message": "Title must be a non-empty."}
+        if sess.query(MenuItem).filter(MenuItem.title == title).first():
+            return {"message": f"{title} already exits. Title must be unique."}
+        return title
 
 
 class Menu(Base):
@@ -105,10 +109,30 @@ class Menu(Base):
 class User(UserMixin, Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
+    name = Column(String(100), unique=True, nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(100), nullable=False)
     menu_item = relationship("Menu", back_populates="user")
+
+    def validate_name(self, name):
+        if not name:
+            return {"message": "Name must be a non-empty."}
+        if sess.query(User).filter(User.name == name).first():
+            return {"message": f"{name} already exits. Email must be unique."}
+        return name
+
+    def validate_email(self, email):
+        if not email:
+            return {"message": "Email must be a non-empty."}
+        if "@" not in email or "." not in email:
+            return {"message": "Email must contain characters: '@' and '.'"}
+        if sess.query(User).filter(User.email == email).first():
+            return {"message": f"{email} already exits. Email must be unique."}
+        return email
+
+    def validate_password(self, password):
+        if len(password) < 6:
+            return {"message": "Password must be longer than 6 characters."}
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

@@ -112,15 +112,13 @@ def add_new_item(curr_user):
     if curr_user.name != "super" and curr_user.name != "admin":
         return jsonify({"message": "No access to this function."}), 403
 
-    title = request.form.get("title")
-    category = request.form.get("category")
-    weight = request.form.get("weight")
-    price = request.form.get("price")
-    if isinstance(Menu.validate_price(price), dict):
-        return jsonify(Menu.validate_price(price)), 400
-    if not title or not category or not weight:
-        return jsonify({"message": "Title, category, weight must be a non-empty."}), 400
-
+    title = MenuItem.validate_title(request.form.get("title"))
+    category = Category.validate_category(request.form.get("category"))
+    weight = Weight.validate_weight(request.form.get("weight"))
+    price = Menu.validate_price(request.form.get("price"))
+    for item in (title, category, weight, price):
+        if isinstance(item, dict):
+            return jsonify(item), 400
     try:
         sess.add(MenuItem(title=title,
                           anonce=request.form.get("anonce"),
@@ -141,13 +139,6 @@ def add_new_item(curr_user):
         sess.commit()
         new_item = sess.query(Menu, MenuItem).filter(MenuItem.title == title).filter(Menu.title_id == MenuItem.id_item)
         return jsonify(menu={"Successfully added the new item in Menu:": get_menu_items(new_item)}), 201
-    except exc.IntegrityError:
-        return jsonify({"message": f"{title} already exits. Title must be unique."}), 400
-    except AttributeError as er:
-        if "id_category" in er.args[0]:
-            return jsonify({"message": f"Invalid category name: {category}."}), 400
-        else:
-            return jsonify({"message": f"Invalid weight name: {weight}."}), 400
     finally:
         sess.close()
 
@@ -163,14 +154,14 @@ def update_menu_item(curr_user, item_id):
             return jsonify({"message": "No access to this function."}), 403
 
         title = request.form.get("title")
-        category = request.form.get("category")
-        weight = request.form.get("weight")
-        price = request.form.get("price")
-        if isinstance(Menu.validate_price(price), dict):
-            return jsonify(Menu.validate_price(price)), 400
-        if not title or not category or not weight:
-            return jsonify({"message": "Title, category, weight must be a non-empty."}), 400
-
+        if not title:
+            return jsonify({"message": "Title must be a non-empty."})
+        category = Category.validate_category(request.form.get("category"))
+        weight = Weight.validate_weight(request.form.get("weight"))
+        price = Menu.validate_price(request.form.get("price"))
+        for item in (category, weight, price):
+            if isinstance(item, dict):
+                return jsonify(item), 400
         try:
             update_item.MenuItem.title = title
             update_item.Menu.category_id = sess.query(Category).filter_by(name=category).first().id_category
@@ -191,11 +182,6 @@ def update_menu_item(curr_user, item_id):
             return jsonify(menu={"Successfully updated the item in Menu:": get_menu_items(update_item)}), 201
         except exc.IntegrityError:
             return jsonify({"message": f"{title} already exists in the menu. Title must be unique."}), 400
-        except AttributeError as er:
-            if "id_category" in er.args[0]:
-                return jsonify({"message": f"Invalid name: {category}."}), 400
-            else:
-                return jsonify({"message": f"Invalid name: {weight}."}), 400
         finally:
             sess.close()
     except exc.NoResultFound:
@@ -223,15 +209,24 @@ def delete_menu_item(curr_user, item_id):
 
 @app.route("/user", methods=["POST"])
 def create_user():
-    data = request.get_json()
-    new_user = User(name=data["name"], email=data["email"])
-    new_user.set_password(data["password"])
-    sess.add(new_user)
-    sess.commit()
-    return jsonify({"message": "New user created!"}), 201
+    try:
+        data = request.get_json()
+        new_user = User(name=data["name"], email=data["email"])
+        name_check = new_user.validate_name(data["name"])
+        email_check = new_user.validate_email(data["email"])
+        password_check = new_user.validate_password(data["password"])
+        for item in (name_check, email_check, password_check):
+            if isinstance(item, dict):
+                return jsonify(item), 400
+        new_user.set_password(data["password"])
+        sess.add(new_user)
+        sess.commit()
+        return jsonify({"message": "New user created!"}), 201
+    finally:
+        sess.close()
 
 
-@app.route("/login")
+@app.route("/login", methods=["POST"])
 def login():
     auth = request.authorization
     if not auth or not auth.username or not auth.password:
