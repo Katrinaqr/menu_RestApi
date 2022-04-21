@@ -1,9 +1,14 @@
 REST API Server. 
 
 Parses data from the site (in this example, the site of a pizzeria) and enters all menu items into the database (SQLite). 
-The server makes it possible to obtain data from the entire menu, its specific categories, price restrictions.
-It is possible to log in and log out.
-Each user has certain rights (view, add, edit, delete menu categories).
+
+The server makes it possible to receive data about the menu, its specific categories, price restrictions. 
+
+There is a registration and authorization function using an access token. 
+During authorization, the server returns an access token, which is later used when accessing those functions that require authorization. 
+The token is sent, the server accepts it, decrypts it and checks the validity period.
+
+Each user has certain rights (viewing, adding, editing, deleting menu categories).
 
 Requests were checked using the application Postman.
 https://www.postman.com
