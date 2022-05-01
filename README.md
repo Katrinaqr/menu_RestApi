@@ -1,4 +1,4 @@
-REST API Server. 
+# REST API Server. 
 
 Parses data from the site (in this example, the site of a pizzeria) and enters all menu items into the database (SQLite). 
 
@@ -22,29 +22,19 @@ Run the main.py file to parse site data.
 
 Run the app.py file to run the server.
 
+### Administrative panel.
 
-Administrative panel.
-
-superuser: administers the entire system and has access to all functionality.
+superuser: administers the entire system and has access to all functionality. Required parameters:
 - id=1
 - name=super
-- email=super@example.com
-- password=super123
 
-admin: can view and create menu items, but can only edit and delete what he himself created.
+admin: can view and create menu items, but can only edit and delete what he himself created. Required parameters:
 - id=2
 - name=admin
-- email=admin@example.com
-- password=admin123
 
 user: can only view the menu items.
-- id=3
-- name=user
-- email=user@example.com
-- password=user123
 
-
-Deployment: upload the project to GitHub.
+### Deployment: upload the project to GitHub.
 
 Local version control with PyCharm:
 - enable version control integration;
